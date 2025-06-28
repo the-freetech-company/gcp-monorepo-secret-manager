@@ -1,6 +1,6 @@
 {
   "name": "gcp-monorepo-secret-manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Google Cloud Secret Manager utility for managing environment variables across different environments and services within a monorepo.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
