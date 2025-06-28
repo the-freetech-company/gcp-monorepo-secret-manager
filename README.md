@@ -5,7 +5,7 @@ A Google Cloud Secret Manager utility for managing environment variables across 
 ## Installation
 
 ```bash
-npm install -g gcp-monorepo-secret-manager@1.0.0-beta.3
+npm install -g gcp-monorepo-secret-manager
 ```
 
 ## Quick Start
@@ -15,19 +15,27 @@ npm install -g gcp-monorepo-secret-manager@1.0.0-beta.3
    msm --init
    ```
 
-2. **Upload environment files**:
+2. Add to the files in your environments directory (default: `.environments`)
+
+3. **Upload environment files**:
+   
+   ***Single Service***
    ```bash
    msm --upload --service frontend --stg
    ```
+   ***Full repository**
+      ```bash
+   msm --upload --service frontend --stg
+   ```
 
-3. **Download environment files**:
+4. **Download and set your environment variables**:
    ```bash
-   msm --download --service api --prod
+   msm --download --service frontend --prod
    ```
 
 ## CLI Reference
 
-```bash
+```
 GCP Monorepo Secret Manager CLI
 
 Usage:
@@ -50,19 +58,19 @@ Options:
   --config         Specify custom config file path (default: .secrets-config)
   --help, -h       Show this help message
 
-Examples:
-  msm --init
-  msm --list
-  msm --add-service
-  msm --remove-service
-  msm --upload --service frontend --stg
-  msm -d -s functions --prod --set
-  msm --peek -s api --stg
-  msm -u -s socket --prod --override-sa
-  msm --peek -s all --stg
-  msm -u -s marketing --prod --config ./my-config.json
-  msm --cleanup --service api --prod
-  msm -c -s all --stg
+  Examples:
+    msm --init
+    msm --list
+    msm --add-service
+    msm --remove-service
+    msm --upload --service all --prod
+    msm --peek -service all --stg
+    msm --download --service all --prod --set
+    msm --upload --service api --stg
+    msm --peek -service api --stg
+    msm --download --service api --stg
+    msm --cleanup --service api --prod
+    msm -u -s socket --prod --override-sa
 ```
 
 ## Complete Example
@@ -74,7 +82,7 @@ Examples:
 
 **How it works:** You edit environment files locally in `.environments/`, then use `msm` commands to securely sync them with Google Cloud Secret Manager.
 
-```bash
+```
 ❯ msm --init
 
 🚀 Welcome to GCP Monorepo Secret Manager Setup!

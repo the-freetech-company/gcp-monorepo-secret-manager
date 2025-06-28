@@ -49,14 +49,14 @@ Options:
     msm --list
     msm --add-service
     msm --remove-service
-    msm --upload --service frontend --stg
-    msm -d -s functions --prod --set
-    msm --peek -s api --stg
-    msm -u -s socket --prod --override-sa
-    msm --peek -s all --stg
-    msm -u -s marketing --prod --config ./my-config.json
+    msm --upload --service all --prod
+    msm --peek -service all --stg
+    msm --download --service all --prod --set
+    msm --upload --service api --stg
+    msm --peek -service api --stg
+    msm --download --service api --stg
     msm --cleanup --service api --prod
-    msm -c -s all --stg
+    msm -u -s socket --prod --override-sa
 `);
   process.exit(0);
 };
