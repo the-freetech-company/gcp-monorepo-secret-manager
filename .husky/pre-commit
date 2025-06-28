@@ -1,0 +1,22 @@
+echo "🔨 Running pre-commit checks..."
+
+# Build the project
+echo "📦 Building project..."
+npm run build
+
+if [ $? -ne 0 ]; then
+  echo "❌ Build failed! Please fix the errors before committing."
+  exit 1
+fi
+
+# Run tests
+echo "🧪 Running tests..."
+npm test
+
+if [ $? -ne 0 ]; then
+  echo "❌ Tests failed! Please fix the failing tests before committing."
+  exit 1
+fi
+
+echo "✅ Build and tests passed!"
+echo "🎉 Pre-commit checks complete!"
