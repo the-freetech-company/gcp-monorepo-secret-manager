@@ -1,0 +1,113 @@
+# Example GitHub Action for projects using gcp-monorepo-secret-manager
+# Copy this to your project's .github/workflows/ directory
+
+name: Example CI/CD with GCP Monorepo Secret Manager
+
+on:
+  push:
+    branches: [foo, bar]
+  pull_request:
+    branches: [foo, bar]
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+          # OR use service account key (less secure)
+          # credentials_json: ${{ secrets.GCP_SA_KEY }}
+          
+      - name: Install GCP Monorepo Secret Manager
+        run: npm install -g gcp-monorepo-secret-manager@latest
+        
+      - name: Download staging environments
+        run: msm --download --service all --stg --set --override-sa
+        
+      - name: Install dependencies
+        run: npm install
+        
+      - name: Run tests
+        run: npm test
+        
+      - name: Build application
+        run: npm run build
+        
+      - name: Deploy to staging
+        run: npm run deploy:staging
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: deploy-staging
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT_PROD }}
+          
+      - name: Install GCP Monorepo Secret Manager
+        run: npm install -g gcp-monorepo-secret-manager@latest
+        
+      - name: Download production environments
+        run: msm --download --service all --prod --set --override-sa
+        
+      - name: Install dependencies
+        run: npm install
+        
+      - name: Build application
+        run: npm run build
+        
+      - name: Deploy to production
+        run: npm run deploy:production
+
+  # Alternative: Using npm scripts
+  deploy-with-scripts:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          
+      - name: Install dependencies (including gcp-monorepo-secret-manager)
+        run: npm install
+        
+      - name: Download environments using npm script
+        run: npm run env:stg:ci  # Uses: msm --download --service all --stg --set --override-sa
+        
+      - name: Build and deploy
+        run: |
+          npm run build
+          npm run deploy:staging 

@@ -15,7 +15,7 @@ export class ConfigManager {
   private loadConfig(): SecretsConfig {
     if (!fs.existsSync(this.configPath)) {
       throw new Error(
-        `Configuration file not found at ${this.configPath}. Please create a .secrets-config file. Run 'monorepo-secrets --init' to generate a template.`
+        `Configuration file not found at ${this.configPath}. Please create a .secrets-config file. Run 'msm --init' to generate a template.`
       );
     }
 
@@ -135,6 +135,6 @@ export class ConfigManager {
     fs.writeFileSync(outputPath, JSON.stringify(template, null, 2));
     console.log(`✅ Configuration template created at ${outputPath}`);
     console.log("Please update the projectIds and paths according to your project structure.");
-    console.log("Use 'monorepo-secrets --add-service' to add services to your configuration.");
+    console.log("Use 'msm --add-service' to add services to your configuration.");
   }
 } 

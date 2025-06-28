@@ -1,13 +1,12 @@
 {
   "name": "gcp-monorepo-secret-manager",
-  "version": "0.0.1-beta.8",
+  "version": "1.0.0-beta.3",
   "description": "A Google Cloud Secret Manager utility for managing environment variables across different environments and services within a monorepo.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "msm": "dist/cli.js",
-    "monorepo-secrets": "dist/cli.js",
-    "gcp-monorepo-secret-manager": "dist/cli.js"
+    "gcp-monorepo-secret-manager": "dist/cli.js",
+    "msm": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -17,7 +16,25 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "semantic-release": "semantic-release",
-    "prepare": "husky"
+    "prepare": "husky",
+    "prerelease": "npm run test && npm run build",
+    "release": "npm run prerelease && semantic-release",
+    "release:dry": "npm run prerelease && semantic-release --dry-run",
+    "postbuild": "chmod +x dist/cli.js",
+    "publish:initial": "npm run prerelease && npm publish",
+    "publish:beta": "npm run prerelease && npm publish --tag beta",
+    "version:patch": "npm version patch",
+    "version:minor": "npm version minor",
+    "version:major": "npm version major",
+    "unpublish:current": "npm unpublish gcp-monorepo-secret-manager@$(node -p \"require('./package.json').version\")",
+    "unpublish:help": "echo 'To unpublish a specific version: npm unpublish gcp-monorepo-secret-manager@VERSION'",
+    "deprecate:current": "npm deprecate gcp-monorepo-secret-manager@$(node -p \"require('./package.json').version\") \"This version has been deprecated\"",
+    "deprecate:minor": "npm deprecate gcp-monorepo-secret-manager@$(node -p \"require('./package.json').version\") \"Minor bugs fixed in newer versions. Update when convenient.\"",
+    "deprecate:major": "npm deprecate gcp-monorepo-secret-manager@$(node -p \"require('./package.json').version\") \"CRITICAL: Major bugs or security issues. Please update immediately!\"",
+    "deprecate:enhancement": "npm deprecate gcp-monorepo-secret-manager@$(node -p \"require('./package.json').version\") \"New features and improvements available in latest version. Consider upgrading.\"",
+    "deprecate:security": "npm deprecate gcp-monorepo-secret-manager@$(node -p \"require('./package.json').version\") \"SECURITY ALERT: Critical vulnerability found. Update immediately!\"",
+    "deprecate:help": "echo 'Deprecation options:\n  npm run deprecate:minor - For minor bugs\n  npm run deprecate:major - For critical issues\n  npm run deprecate:enhancement - For feature upgrades\n  npm run deprecate:security - For security issues\n  npm run deprecate:current - Generic deprecation'",
+    "clean:publish": "npm run unpublish:current && npm run publish:beta"
   },
   "keywords": [
     "google-cloud",
@@ -27,18 +44,24 @@
     "configuration",
     "secrets",
     "monorepo",
-    "gcloud"
+    "gcloud",
+    "gcp",
+    "typescript",
+    "nodejs",
+    "cli",
+    "devops",
+    "deployment"
   ],
   "author": "Adam Siwiec",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/the-freetech-company/freetech-secret-manager.git"
+    "url": "https://github.com/the-freetech-company/gcp-monorepo-secret-manager.git"
   },
   "bugs": {
-    "url": "https://github.com/the-freetech-company/freetech-secret-manager/issues"
+    "url": "https://github.com/the-freetech-company/gcp-monorepo-secret-manager/issues"
   },
-  "homepage": "https://github.com/the-freetech-company/freetech-secret-manager#readme",
+  "homepage": "https://github.com/the-freetech-company/gcp-monorepo-secret-manager#readme",
   "files": [
     "dist/**/*",
     "README.md",

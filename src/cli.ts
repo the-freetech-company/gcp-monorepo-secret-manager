@@ -25,7 +25,7 @@ const showHelp = () => {
 GCP Monorepo Secret Manager CLI
 
 Usage:
-  monorepo-secrets [options]
+  msm [options]
 
 Options:
   --upload, -u     Upload environment variables to Firebase Secret Manager
@@ -45,19 +45,20 @@ Options:
   --help, -h       Show this help message
 
   Examples:
-    monorepo-secrets --init
-    monorepo-secrets --list
-    monorepo-secrets --add-service
-    monorepo-secrets --remove-service
-    monorepo-secrets --upload --service frontend --stg
-    monorepo-secrets -d -s functions --prod --set
-    monorepo-secrets --peek -s api --stg
-    monorepo-secrets -u -s socket --prod --override-sa
-    monorepo-secrets --peek -s all --stg
-    monorepo-secrets -u -s marketing --prod --config ./my-config.json
-    monorepo-secrets --cleanup --service api --prod
-    monorepo-secrets -c -s all --stg
+    msm --init
+    msm --list
+    msm --add-service
+    msm --remove-service
+    msm --upload --service frontend --stg
+    msm -d -s functions --prod --set
+    msm --peek -s api --stg
+    msm -u -s socket --prod --override-sa
+    msm --peek -s all --stg
+    msm -u -s marketing --prod --config ./my-config.json
+    msm --cleanup --service api --prod
+    msm -c -s all --stg
 `);
+  process.exit(0);
 };
 
 const initializeConfig = async () => {
@@ -225,9 +226,9 @@ const initializeConfig = async () => {
   console.log("\n🔧 Next steps:");
   console.log("1. Make sure your service account files exist at the specified paths");
   console.log(`2. Edit your environment files in the ${environmentsDir} directory`);
-      console.log("3. Run 'monorepo-secrets --list' to see your configured services");
-    console.log("4. Use 'monorepo-secrets --upload --service <name> --stg/--prod' to upload environment files");
-      console.log("5. Use 'monorepo-secrets --cleanup --service <name> --stg/--prod' to cleanup old versions");
+      console.log("3. Run 'msm --list' to see your configured services");
+    console.log("4. Use 'msm --upload --service <name> --stg/--prod' to upload environment files");
+      console.log("5. Use 'msm --cleanup --service <name> --stg/--prod' to cleanup old versions");
 
   rl.close();
 };
