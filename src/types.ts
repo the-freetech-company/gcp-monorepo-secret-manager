@@ -49,4 +49,27 @@ export interface GcpMonorepoSecretManagerOptions {
   environment: Environment;
   overrideSa?: boolean;
   configPath?: string;
+}
+
+/**
+ * Base configuration interface with common properties for all FreeTech services
+ */
+export interface BaseConfig {
+  env: "STG" | "PROD";
+}
+
+/**
+ * Service-specific configuration options
+ */
+export interface ConfigOptions {
+  /** The service name, used for logging and identifying the service */
+  serviceName: string;
+  /** Required project ID */
+  projectId: string;
+  /** Optional path to the .env file */
+  envPath?: string;
+  /** Optional custom secret name (defaults to "{SERVICE_NAME}_ENV_FILE") */
+  secretName?: string;
+  /** Required environment variables that must be present */
+  requiredEnvVars?: string[];
 } 

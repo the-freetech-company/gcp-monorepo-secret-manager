@@ -10,6 +10,8 @@ npm install -g gcp-monorepo-secret-manager
 
 ## Quick Start
 
+### Method 1: CLI-based Configuration Management (Recommended for Monorepos)
+
 1. **Initialize configuration**:
    ```bash
    msm --init
@@ -32,6 +34,28 @@ npm install -g gcp-monorepo-secret-manager
    ```bash
    msm --download --service frontend --prod
    ```
+
+### Method 2: Direct SDK Integration (Simple Services)
+
+For simple services or applications, use the `loadConfig` function directly:
+
+```typescript
+import { loadConfig } from "gcp-monorepo-secret-manager";
+
+// At the start of your application
+await loadConfig({
+  serviceName: "my-service",
+  projectId: "my-gcp-project",
+  requiredEnvVars: ["DATABASE_URL", "API_KEY"]
+});
+
+// Environment variables are now available
+console.log(process.env.DATABASE_URL);
+```
+
+**When to use each method:**
+- **CLI Method**: Best for monorepos with multiple services, complex deployments, and team collaboration
+- **SDK Method**: Perfect for single services, containers, serverless functions, and simple applications
 
 ## CLI Reference
 
@@ -72,6 +96,41 @@ Options:
     msm --cleanup --service api --prod
     msm -u -s socket --prod --override-sa
 ```
+
+## SDK Reference
+
+### loadConfig Function
+
+The `loadConfig` function provides a simple way to load environment variables from Google Cloud Secret Manager directly into your application:
+
+```typescript
+import { loadConfig } from "gcp-monorepo-secret-manager";
+
+await loadConfig(options: ConfigOptions);
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `serviceName` | `string` | ✅ | Service identifier for logging and secret naming |
+| `projectId` | `string` | ✅ | Google Cloud project ID |
+| `envPath` | `string` | ❌ | Path to .env file (default: `./.env`) |
+| `secretName` | `string` | ❌ | Custom secret name (default: `{SERVICE_NAME}_ENV_FILE`) |
+| `requiredEnvVars` | `string[]` | ❌ | List of required environment variables to validate |
+
+#### Return Value
+
+- **Type**: `Promise<void>`
+- **Description**: Loads environment variables into `process.env`
+
+#### Behavior
+
+1. **Local Check**: First checks if `.env` file exists locally
+2. **Secret Fetch**: If not found, fetches from Google Cloud Secret Manager
+3. **File Write**: Writes secret content to local `.env` file
+4. **Environment Load**: Loads variables into `process.env`
+5. **Validation**: Verifies required environment variables are present
 
 ## Complete Example
 
@@ -326,6 +385,10 @@ msm --upload --service all --prod && msm --cleanup --service all --prod
 
 ## Programmatic API
 
+### Full Secret Manager API
+
+For complex monorepo scenarios, use the full `GcpMonorepoSecretManager` class:
+
 ```typescript
 import { GcpMonorepoSecretManager } from "gcp-monorepo-secret-manager";
 
@@ -349,6 +412,97 @@ await secretManager.cleanupVersions("all");       // Clean all services
 const services = secretManager.getAvailableServices();
 console.log("Available services:", services);
 ```
+
+### Simple Configuration Loading
+
+```typescript
+import { loadConfig } from "gcp-monorepo-secret-manager";
+
+// Load configuration with validation
+await loadConfig({
+  serviceName: "my-service",
+  projectId: "my-gcp-project",
+  requiredEnvVars: ["DATABASE_URL", "API_KEY"]
+});
+
+// Environment variables are now available
+console.log(process.env.DATABASE_URL);
+```
+
+### TypeScript Interfaces
+
+```typescript
+import { 
+  loadConfig, 
+  ConfigOptions, 
+  BaseConfig,
+  GcpMonorepoSecretManager,
+  GcpMonorepoSecretManagerOptions
+} from "gcp-monorepo-secret-manager";
+
+// Configuration options for loadConfig
+interface ConfigOptions {
+  serviceName: string;           // Required: service identifier
+  projectId: string;            // Required: GCP project ID
+  envPath?: string;             // Optional: .env file path (default: ./.env)
+  secretName?: string;          // Optional: secret name (default: {SERVICE_NAME}_ENV_FILE)
+  requiredEnvVars?: string[];   // Optional: required environment variables
+}
+
+// Base configuration interface
+interface BaseConfig {
+  env: "STG" | "PROD";          // Environment type
+}
+
+// Full Secret Manager options
+interface GcpMonorepoSecretManagerOptions {
+  environment: "staging" | "production";
+  overrideSa?: boolean;         // Skip service account loading
+  configPath?: string;          // Custom config file path
+}
+```
+
+### Usage Example
+
+```typescript
+import express from "express";
+import { loadConfig } from "gcp-monorepo-secret-manager";
+
+async function startServer() {
+  // Load configuration at startup
+  await loadConfig({
+    serviceName: "api-server",
+    projectId: "my-company-prod",
+    requiredEnvVars: ["DATABASE_URL", "JWT_SECRET", "PORT"]
+  });
+
+  const app = express();
+  const port = process.env.PORT || 3000;
+  
+  // Your app logic here
+  
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
+
+startServer().catch(console.error);
+```
+
+### Best Practices
+
+1. **Cache Configuration**: Load configuration once at application startup
+2. **Validate Required Variables**: Always specify `requiredEnvVars` for critical configuration
+3. **Error Handling**: Implement proper error handling for production applications
+4. **Environment Separation**: Use different project IDs for staging/production
+5. **Security**: Never log sensitive environment variables
+6. **Graceful Degradation**: Consider fallback values for non-critical configuration
+
+**Use Cases:**
+- Simple service initialization
+- Containerized applications
+- Serverless functions
+- Microservices
 
 ## Security & Best Practices
 
