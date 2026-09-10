@@ -10,6 +10,9 @@ build/
 
 service.json
 
+# Local encrypted store
+.msm/
+
 # Environment files
 .env
 .env.local

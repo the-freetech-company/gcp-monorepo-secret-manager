@@ -1,12 +1,21 @@
-export { GcpMonorepoSecretManager } from './GcpMonorepoSecretManager';
-export { ConfigManager } from './ConfigManager';
-export { loadConfig } from './loadConfig';
-export { initSecretManagerClient } from './initSecretManagerClient';
-export { 
-  Environment, 
-  ServiceConfig, 
-  SecretsConfig, 
+export { MonorepoSecretManager } from "./MonorepoSecretManager";
+export { GcpMonorepoSecretManager } from "./GcpMonorepoSecretManager";
+export { ConfigManager } from "./ConfigManager";
+export { loadConfig } from "./loadConfig";
+export { initSecretManagerClient } from "./initSecretManagerClient";
+export { createBackend } from "./backends/createBackend";
+export { getKind } from "./kinds";
+export {
+  Environment,
+  Provider,
+  SecretKindId,
+  ServiceConfig,
+  ServiceSecretConfig,
+  SecretsConfig,
+  EnvironmentConfig,
+  MonorepoSecretManagerOptions,
   GcpMonorepoSecretManagerOptions,
   BaseConfig,
-  ConfigOptions
-} from './types'; 
+  ConfigOptions,
+  DeletePolicy,
+} from "./types";

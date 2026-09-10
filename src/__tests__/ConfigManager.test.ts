@@ -137,7 +137,15 @@ describe('ConfigManager', () => {
         name: 'app',
         envPath: '.environments/.app.{env}.env',
         targetPath: 'services/app/.env',
-        secretPrefix: 'app-env-vars'
+        secretPrefix: 'app-env-vars',
+        secrets: [
+          {
+            kind: 'env-file',
+            sourcePath: '.environments/.app.{env}.env',
+            targetPath: 'services/app/.env',
+            remoteName: 'app-env-vars_ENV_FILE',
+          },
+        ],
       });
     });
 
@@ -156,8 +164,47 @@ describe('ConfigManager', () => {
       configManager = new ConfigManager();
     });
 
-    it('should return all services', () => {
-      expect(configManager.getServices()).toEqual(mockConfig.services);
+    it('should return all adapted services', () => {
+      const services = configManager.getServices();
+      expect(services).toHaveLength(2);
+      expect(services[0].secrets[0].remoteName).toBe('app-env-vars_ENV_FILE');
+      expect(services[1].name).toBe('api');
+    });
+  });
+
+  describe('v2 config', () => {
+    const v2Config = {
+      version: 2,
+      environments: {
+        staging: { provider: 'local', storePath: '.msm/store' },
+        production: {
+          provider: 'aws',
+          region: 'us-east-1',
+        },
+      },
+      services: [
+        {
+          name: 'api',
+          secrets: [
+            {
+              kind: 'env-file',
+              sourcePath: '.environments/.api.{env}.env',
+              targetPath: 'services/api/.env',
+              remoteName: 'api-env-file',
+            },
+          ],
+        },
+      ],
+    };
+
+    it('loads a provider-aware config', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(v2Config));
+
+      const configManager = new ConfigManager();
+      expect(configManager.getEnvironmentConfig('staging').provider).toBe('local');
+      expect(configManager.getEnvironmentConfig('production').region).toBe('us-east-1');
+      expect(configManager.getServiceByName('api')?.secrets[0].kind).toBe('env-file');
     });
   });
 }); 

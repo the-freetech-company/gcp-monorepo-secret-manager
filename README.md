@@ -1,259 +1,206 @@
-# GCP Monorepo Secret Manager
+# Monorepo Secret Manager
 
-A Google Cloud Secret Manager utility for managing environment variables across multiple services in monorepos.
+[![npm version](https://img.shields.io/npm/v/monorepo-secret-manager.svg)](https://www.npmjs.com/package/monorepo-secret-manager)
+[![npm downloads](https://img.shields.io/npm/dm/monorepo-secret-manager.svg)](https://www.npmjs.com/package/monorepo-secret-manager)
+[![CI](https://github.com/adamsiwiec1/monorepo-secret-manager/actions/workflows/publish.yml/badge.svg)](https://github.com/adamsiwiec1/monorepo-secret-manager/actions/workflows/publish.yml)
+[![license](https://img.shields.io/npm/l/monorepo-secret-manager.svg)](LICENSE)
+[![node](https://img.shields.io/node/v/monorepo-secret-manager.svg)](https://www.npmjs.com/package/monorepo-secret-manager)
 
-## Installation
+CLI and TypeScript SDK for syncing env files, SSH keypairs, TLS bundles, JSON, and binary secrets across a monorepo. Store them in [GCP Secret Manager](https://cloud.google.com/secret-manager), [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/), [Azure Key Vault](https://learn.microsoft.com/azure/key-vault/), or a local encrypted store.
+
+You keep files on disk (typically under `.environments/`). `msm` uploads each item as a secret, downloads the latest version, writes it to a service path, or prunes old versions. Staging and production can use different providers — for example local staging and GCP production.
+
+This package was previously published as `gcp-monorepo-secret-manager`. See [MIGRATION.md](./MIGRATION.md).
+
+## Table of contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Backends](#backends)
+- [Secret kinds](#secret-kinds)
+- [Configuration](#configuration)
+- [CLI](#cli)
+- [Programmatic API](#programmatic-api)
+- [CI/CD](#cicd)
+- [Secret versions](#secret-versions)
+- [Security](#security)
+- [Development](#development)
+- [Contributing](#contributing)
+- [FOSS template](#foss-template)
+- [License](#license)
+
+## Features
+
+- Interactive setup (`msm --init`) plus add/remove service commands
+- Upload, download, redacted peek, and cleanup for one service or all services
+- Per-environment providers: `gcp`, `aws`, `azure`, or `local`
+- Secret kinds: `env-file`, `ssh-keypair`, `tls-bundle`, `json`, `binary`
+- `--set` writes downloaded files to each service’s target path
+- `--override-sa` uses the environment credential chain (ADC, instance roles, Azure identity) instead of a local key file
+- Optional delete policy to cap version count and age
+- `loadConfig()` for apps that fetch an env-file secret at process start
+- Cloud SDKs are optional peers — install only the backend you use
+
+## Requirements
+
+- Node.js 16 or later
+- A backend for each environment you configure
+- Credentials that can read and write secrets on that backend:
+  - GCP: a service-account JSON file, or ADC / Workload Identity (`--override-sa`)
+  - AWS: the default credential chain or `AWS_PROFILE`
+  - Azure: `DefaultAzureCredential`
+  - Local: `MSM_LOCAL_KEY` or `.msm/key` (created by `msm --init`)
+
+Recommended IAM (or equivalent): admin/write for upload and cleanup, read/accessor for download and peek.
+
+## Install
+
+Global CLI (exposes `msm` and `monorepo-secret-manager`):
 
 ```bash
-npm install -g gcp-monorepo-secret-manager
+npm install -g monorepo-secret-manager
 ```
 
-## Quick Start
+As a project dependency (CLI via `npx` / npm scripts, plus the SDK):
 
-### Method 1: CLI-based Configuration Management (Recommended for Monorepos)
+```bash
+npm install monorepo-secret-manager
+```
 
-1. **Initialize configuration**:
-   ```bash
-   msm --init
-   ```
+```bash
+npx msm --help
+```
 
-2. Add to the files in your environments directory (default: `.environments`)
+Install only the SDK for the backend you use:
 
-3. **Upload environment files**:
-   
-   ***Single Service***
-   ```bash
-   msm --upload --service frontend --stg
-   ```
-   ***Full repository**
-      ```bash
-   msm --upload --service frontend --stg
-   ```
+```bash
+npm install @google-cloud/secret-manager
+npm install @aws-sdk/client-secrets-manager
+npm install @azure/identity @azure/keyvault-secrets
+```
 
-4. **Download and set your environment variables**:
-   ```bash
-   msm --download --service frontend --prod
-   ```
+The local backend is built in. No extra package is required.
 
-### Method 2: Direct SDK Integration (Simple Services)
+If a provider SDK is missing, the CLI fails with:
 
-For simple services or applications, use the `loadConfig` function directly:
+```text
+Provider "aws" requires @aws-sdk/client-secrets-manager. Run: npm i -D @aws-sdk/client-secrets-manager
+```
 
-```typescript
-import { loadConfig } from "gcp-monorepo-secret-manager";
+Coming from `gcp-monorepo-secret-manager`? Uninstall the old name and follow [MIGRATION.md](./MIGRATION.md).
 
-// At the start of your application
+## Quick start
+
+**Monorepo (CLI)**
+
+```bash
+msm --init
+# Edit the generated files in .environments/
+msm --upload --service all --stg
+msm --download --service all --stg --set
+```
+
+The init wizard asks for a provider per environment. Staging can be `local` while production is `gcp`, `aws`, or `azure`.
+
+**Single service (SDK)**
+
+```ts
+import { loadConfig } from "monorepo-secret-manager";
+
 await loadConfig({
-  serviceName: "my-service",
+  serviceName: "api",
+  provider: "gcp",
   projectId: "my-gcp-project",
-  requiredEnvVars: ["DATABASE_URL", "API_KEY"]
+  secretName: "api-env-file",
+  requiredEnvVars: ["DATABASE_URL", "API_KEY"],
 });
 
-// Environment variables are now available
 console.log(process.env.DATABASE_URL);
 ```
 
-**When to use each method:**
-- **CLI Method**: Best for monorepos with multiple services, complex deployments, and team collaboration
-- **SDK Method**: Perfect for single services, containers, serverless functions, and simple applications
+Use the CLI when several services share one config file. Use `loadConfig` when a process should pull its own env-file secret at startup (containers, Cloud Run, functions).
 
-## CLI Reference
+## How it works
 
-```
-GCP Monorepo Secret Manager CLI
+1. `.secrets-config` lists environments (provider + credentials) and services (one or more secret items).
+2. Each item has a kind, local paths, and a `remoteName` on the backend.
+3. Upload reads the local files and stores them under that name. Typed kinds go in a JSON envelope so every backend can carry them, including Azure (string-only).
+4. Download writes the latest version back to the source path. `--set` also writes target paths.
+5. `{env}` in paths becomes `stg` or `prod` depending on `--stg` / `--prod`.
 
-Usage:
-  msm [options]
+`env-file` is stored as raw text by default so existing GCP `*_ENV_FILE` secrets keep working.
 
-Options:
-  --upload, -u     Upload environment variables to Firebase Secret Manager
-  --download, -d   Download environment variables from Firebase Secret Manager
-  --peek, -p       Display environment variables in the terminal
-  --cleanup, -c    Clean up old secret versions based on delete policy
-  --service, -s    Specify service name (use --list to see available services) or 'all'
-  --stg            Use staging environment (.stg.env)
-  --prod           Use production environment (.prod.env)
-  --override-sa    Skip loading service account (for CI/CD)
-  --set            Copy the environment file to target location after download (only with --download)
-  --init           Generate a .secrets-config template file
-  --list           List available services from configuration
-  --add-service    Add a new service to existing configuration
-  --remove-service Remove a service from configuration
-  --config         Specify custom config file path (default: .secrets-config)
-  --help, -h       Show this help message
+## Backends
 
-  Examples:
-    msm --init
-    msm --list
-    msm --add-service
-    msm --remove-service
-    msm --upload --service all --prod
-    msm --peek -service all --stg
-    msm --download --service all --prod --set
-    msm --upload --service api --stg
-    msm --peek -service api --stg
-    msm --download --service api --stg
-    msm --cleanup --service api --prod
-    msm -u -s socket --prod --override-sa
-```
+| Provider | Store | Auth | Config |
+| --- | --- | --- | --- |
+| `gcp` | Secret Manager | ADC or a service-account JSON path | `projectId`, optional `credentials.path` |
+| `aws` | Secrets Manager | Default credential chain or `AWS_PROFILE` | `region`, optional `credentials.profile` |
+| `azure` | Key Vault secrets | `DefaultAzureCredential` | `vaultUrl` |
+| `local` | Encrypted files under `.msm/store` | `MSM_LOCAL_KEY` or `.msm/key` | `storePath`, optional `keyPath` |
 
-## SDK Reference
+The local store uses AES-256-GCM. `msm --init` creates `.msm/key` (mode `0600`) and adds `.msm/` to `.gitignore`. The backend refuses to run if the store is in a git repo and is not ignored.
 
-### loadConfig Function
+## Secret kinds
 
-The `loadConfig` function provides a simple way to load environment variables from Google Cloud Secret Manager directly into your application:
+Each service can have one or more items:
 
-```typescript
-import { loadConfig } from "gcp-monorepo-secret-manager";
+| Kind | What it stores | On disk |
+| --- | --- | --- |
+| `env-file` | dotenv text | source/target file, mode `0600` |
+| `ssh-keypair` | private + public key | private file `0600` |
+| `tls-bundle` | cert, key, optional chain | key file `0600` |
+| `json` | a JSON object or array | one file |
+| `binary` | an opaque file | one file |
 
-await loadConfig(options: ConfigOptions);
-```
+`msm --peek` prints redacted output. It never prints private keys or env values.
 
-#### Parameters
+## Configuration
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `serviceName` | `string` | ✅ | Service identifier for logging and secret naming |
-| `projectId` | `string` | ✅ | Google Cloud project ID |
-| `envPath` | `string` | ❌ | Path to .env file (default: `./.env`) |
-| `secretName` | `string` | ❌ | Custom secret name (default: `{SERVICE_NAME}_ENV_FILE`) |
-| `requiredEnvVars` | `string[]` | ❌ | List of required environment variables to validate |
+`msm --init` writes `.secrets-config` and creates empty source files. You can also copy [`.secrets-config.example`](.secrets-config.example).
 
-#### Return Value
-
-- **Type**: `Promise<void>`
-- **Description**: Loads environment variables into `process.env`
-
-#### Behavior
-
-1. **Local Check**: First checks if `.env` file exists locally
-2. **Secret Fetch**: If not found, fetches from Google Cloud Secret Manager
-3. **File Write**: Writes secret content to local `.env` file
-4. **Environment Load**: Loads variables into `process.env`
-5. **Validation**: Verifies required environment variables are present
-
-## Complete Example
-
-**Key Components:**
-
-- **`.secrets-config`** - Defines your services, GCP projects, and where environment files live
-- **`.environments/`** - Stores your actual environment files (`.env` files) for each service and environment
-
-**How it works:** You edit environment files locally in `.environments/`, then use `msm` commands to securely sync them with Google Cloud Secret Manager.
-
-```
-❯ msm --init
-
-🚀 Welcome to GCP Monorepo Secret Manager Setup!
-
-This wizard will help you set up your configuration file.
-
-📋 Google Cloud Project Setup
-Enter your staging Google Cloud project ID [test-staging-project]: my-project-stg
-Enter your production Google Cloud project ID [test-production-project]: my-project
-
-🔑 Service Account Setup
-Enter path to staging service account JSON file [firebase/test-stg/firebase-admin.json]:
-Enter path to production service account JSON file [firebase/test-production/firebase-admin.json]:
-
-📁 Environment Files Setup
-Environment files directory [.environments]:
-
-📦 Services Setup
-Now let's set up your services/applications.
-
---- Service 1 ---
-Service name [app]: app
-Target path for downloaded files [services/app/.env]: web/app/.env
-Secret prefix in Google Cloud [app-env-vars]:
-
-Add another service? [y/N]: y
-
---- Service 2 ---
-Service name [app]: api
-Target path for downloaded files [services/api/.env]:
-Secret prefix in Google Cloud [api-env-vars]:
-
-Add another service? [y/N]: y
-
---- Service 3 ---
-Service name [app]: worker
-Target path for downloaded files [services/worker/.env]:
-Secret prefix in Google Cloud [worker-env-vars]:
-
-Add another service? [y/N]: n
-
-🧹 Delete Policy Setup
-Configure automatic cleanup of old secret versions:
-Maximum versions to keep [10]:
-Maximum age in days [30]: 35
-Enable automatic cleanup? [Y/n]: y
-
-📄 Creating environment files...
-  ✅ Created .environments/.worker.stg.env
-  ✅ Created .environments/.worker.prod.env
-
-✅ Configuration file created successfully!
-
-📝 Summary:
-- Staging project: my-project-stg
-- Production project: my-project
-- Environment directory: .environments
-- Services configured: app, api, worker
-- Delete Policy: maxVersions=10, maxAgeDays=35, enabled=true
-
-🔧 Next steps:
-1. Make sure your service account files exist at the specified paths
-2. Edit your environment files in the .environments directory
-3. Run 'msm --list' to see your configured services
-4. Use 'msm --upload --service <name> --stg/--prod' to upload environment files
-5. Use 'msm --cleanup --service <name> --stg/--prod' to cleanup old versions
-```
-
-### Configuration File (`.secrets-config`)
-
-**How it works:** The `msm --init` command generates the followings `.secrets-config` file.
-
-- **serviceAccountPaths**: Paths to Google Cloud service account JSON files
-- **projectIds**: Google Cloud project IDs for each environment
-- **services**: Array of service configurations
-  - **name**: Service identifier (used in CLI commands)
-  - **envPath**: Path to environment file template (`{env}` is replaced with `stg` or `prod`)
-  - **targetPath**: Where to deploy the environment file when using `--set`
-  - **secretPrefix**: Prefix for the secret name in Google Cloud Secret Manager
-- **deletePolicy**: Automatic cleanup configuration
-  - **maxVersions**: Maximum number of versions to keep per secret (default: 10)
-  - **maxAgeDays**: Automatically delete versions older than this many days (default: 30)
-  - **enabled**: Enable/disable automatic cleanup (default: true)
+`.secrets-config` v2:
 
 ```json
 {
-  "serviceAccountPaths": {
-    "staging": "gcloud/staging/service-account.json",
-    "production": "gcloud/production/service-account.json"
-  },
-  "projectIds": {
-    "staging": "my-project-staging",
-    "production": "my-project-prod"
+  "version": 2,
+  "environments": {
+    "staging": {
+      "provider": "local",
+      "storePath": ".msm/store"
+    },
+    "production": {
+      "provider": "gcp",
+      "projectId": "my-project-prod",
+      "credentials": { "path": "gcloud/production/sa.json" }
+    }
   },
   "services": [
     {
-      "name": "frontend",
-      "envPath": ".environments/.frontend.{env}.env",
-      "targetPath": "apps/web/.env",
-      "secretPrefix": "frontend-env-vars"
-    },
-    {
       "name": "api",
-      "envPath": ".environments/.api.{env}.env",
-      "targetPath": "services/api/.env",
-      "secretPrefix": "api-env-vars"
-    },
-    {
-      "name": "worker",
-      "envPath": ".environments/.worker.{env}.env",
-      "targetPath": "services/worker/.env",
-      "secretPrefix": "worker-env-vars"
+      "secrets": [
+        {
+          "kind": "env-file",
+          "sourcePath": ".environments/.api.{env}.env",
+          "targetPath": "services/api/.env",
+          "remoteName": "api-env-file"
+        },
+        {
+          "kind": "ssh-keypair",
+          "remoteName": "api-deploy-ssh",
+          "source": {
+            "private": ".environments/api.{env}.id_ed25519",
+            "public": ".environments/api.{env}.id_ed25519.pub"
+          },
+          "target": {
+            "private": "services/api/.ssh/deploy",
+            "public": "services/api/.ssh/deploy.pub"
+          }
+        }
+      ]
     }
   ],
   "deletePolicy": {
@@ -264,265 +211,258 @@ Enable automatic cleanup? [Y/n]: y
 }
 ```
 
-### Suggested Directory Structure
+| Field | Description |
+| --- | --- |
+| `environments.*.provider` | `gcp`, `aws`, `azure`, or `local`. |
+| `environments.*.projectId` | GCP project ID. |
+| `environments.*.region` | AWS region. |
+| `environments.*.vaultUrl` | Azure Key Vault URL. |
+| `environments.*.storePath` | Local encrypted store directory. |
+| `environments.*.credentials.path` | GCP service-account JSON. Unused with `--override-sa`. |
+| `environments.*.credentials.profile` | Optional AWS profile. |
+| `services[].name` | Name used with `--service`. |
+| `services[].secrets[].kind` | One of the kinds above. |
+| `services[].secrets[].remoteName` | Secret id on the backend. |
+| `services[].secrets[].sourcePath` / `targetPath` | Single-file kinds. `{env}` becomes `stg` or `prod`. |
+| `services[].secrets[].source` / `target` | Multi-file kinds (`private`, `public`, `cert`, `key`, `chain`). |
+| `deletePolicy` | Optional. Applied after upload and by `--cleanup`. Defaults: 10 versions, 30 days, enabled. |
 
-```
+A v1 GCP-only file (`serviceAccountPaths` + `projectIds` + `secretPrefix`) is still loaded and treated as `provider: "gcp"` with one `env-file` item per service.
+
+Suggested layout:
+
+```text
 your-monorepo/
-├── .secrets-config              # Configuration file
-├── .environments/               # Environment files directory
-│   ├── .frontend.stg.env        # Frontend staging environment
-│   ├── .frontend.prod.env       # Frontend production environment
-│   ├── .api.stg.env             # API staging environment
-│   ├── .api.prod.env            # API production environment
-│   ├── .worker.stg.env          # Worker staging environment
-│   └── .worker.prod.env         # Worker production environment
-├── gcloud/                      # Service account files
-│   ├── staging/
-│   │   └── service-account.json
-│   └── production/
-│       └── service-account.json
-├── apps/
-│   └── web/                     # Frontend application
-│       └── .env                 # Target location for frontend env
-├── services/
-│   ├── api/                     # Backend API service
-│   │   └── .env                 # Target location for API env
-│   └── worker/                  # Background worker service
-│       └── .env                 # Target location for worker env
-└── packages/                    # Shared packages
+├── .secrets-config
+├── .environments/
+├── .msm/                    # local store, gitignored
+├── gcloud/production/sa.json
+├── apps/web/.env
+└── services/api/.env
 ```
 
-### List Services Output
+Ignore local secrets:
+
+```gitignore
+.environments/
+**/.env
+.msm/
+gcloud/**/*.json
+```
+
+`.secrets-config` is not secret by itself (project IDs and paths only). Commit it if the team shares the same layout; keep it private if you treat project IDs as internal.
+
+## CLI
+
+```text
+msm [options]
+```
+
+| Option | Description |
+| --- | --- |
+| `--init` | Interactive wizard. Writes `.secrets-config` and source-file stubs. |
+| `--list` | Print configured services and their secret items. |
+| `--add-service` / `--remove-service` | Edit services in an existing config. |
+| `--upload`, `-u` | Upload local files to the selected backend. |
+| `--download`, `-d` | Download latest versions to source paths. |
+| `--set` | With `--download` only: also write target paths. |
+| `--peek`, `-p` | Print redacted secret contents. |
+| `--cleanup`, `-c` | Destroy versions that exceed `deletePolicy`. |
+| `--service`, `-s` | Service name, or `all`. |
+| `--stg` / `--prod` | Required for upload, download, peek, and cleanup. |
+| `--override-sa` | Skip local credential files; use the environment. |
+| `--config` | Config path (default: `.secrets-config`). |
+| `--help`, `-h` | Show help. |
 
 ```bash
-❯ msm --list
+msm --list
 
-📋 Available services:
-  • app (app-env-vars)
-    Environment: .environments/.app.{env}.env
-    Target: web/app/.env
+msm --upload --service api --stg
+msm --upload --service all --prod
 
-  • api (api-env-vars)
-    Environment: .environments/.api.{env}.env
-    Target: services/api/.env
+msm --download --service api --stg
+msm --download --service all --prod --set
 
-  • worker (worker-env-vars)
-    Environment: .environments/.worker.{env}.env
-    Target: services/worker/.env
+msm --peek --service api --stg
+msm --cleanup --service all --prod
+
+# CI / Workload Identity / instance roles
+msm --download --service all --stg --set --override-sa
 ```
 
-### CI/CD Integration
+`--service` values are matched case-insensitively.
 
-**Command Line Usage:**
-
-Example Workflow: https://github.com/the-freetech-company/gcp-monorepo-secret-manager/tree/master/.github/workflows
-
-## Helpers in package.json
-
-Add these scripts to your `package.json` for easy environment management:
+Optional scripts in a consuming repo:
 
 ```json
 {
   "scripts": {
     "secrets": "msm --list",
-    "env:stg": "msm --download --service all --stg --set && firebase use freetech-stg",
-    "env:prod": "msm --download --service all --prod --set && firebase use freetech-production",
+    "env:stg": "msm --download --service all --stg --set",
+    "env:prod": "msm --download --service all --prod --set",
     "env:stg:apply": "msm --upload --service all --stg",
     "env:prod:apply": "msm --upload --service all --prod",
-    "env:apply": "pnpm run env:stg:apply && pnpm run env:prod:apply",
     "env:stg:ci": "msm --download --service all --stg --set --override-sa",
     "env:prod:ci": "msm --download --service all --prod --set --override-sa"
   }
 }
 ```
 
-### Script Explanations:
-
-- **`pnpm secrets`** - List all configured services and their paths
-- **`pnpm env:stg`** - Download all staging environments and switch Firebase project
-- **`pnpm env:prod`** - Download all production environments and switch Firebase project
-- **`pnpm env:stg:apply`** - Upload all staging environment files to Secret Manager
-- **`pnpm env:prod:apply`** - Upload all production environment files to Secret Manager
-- **`pnpm env:apply`** - Upload both staging and production environments
-- **`pnpm env:stg:ci`** - Download staging environments for CI/CD (no service account needed)
-- **`pnpm env:prod:ci`** - Download production environments for CI/CD (no service account needed)
-
-## Delete Policy & Secret Lifecycle Management
-
-Automatic cleanup prevents Google Cloud Secret Manager from accumulating unnecessary versions:
-
-### Automatic Cleanup
-
-- Triggered automatically after each upload operation
-- Configurable limits on version count and age
-- Always keeps at least 1 version
-- Graceful error handling - continues if cleanup fails
-
-### Manual Cleanup
-
-```bash
-# Clean up specific service
-msm --cleanup --service api --prod
-
-# Clean up all services
-msm --cleanup --service all --stg
-
-# Part of deployment pipeline
-msm --upload --service all --prod && msm --cleanup --service all --prod
-```
-
-### Configuration
-
-```json
-{
-  "deletePolicy": {
-    "maxVersions": 5,  // Keep only 5 most recent versions
-    "maxAgeDays": 7,   // Delete versions older than 7 days
-    "enabled": true    // Enable automatic cleanup
-  }
-}
-```
-
 ## Programmatic API
 
-### Full Secret Manager API
+### `loadConfig(options)`
 
-For complex monorepo scenarios, use the full `GcpMonorepoSecretManager` class:
+Loads variables into `process.env`. If `envPath` already exists (default `./.env`), that file is used and the backend is not called. Otherwise the latest secret is fetched, written to `envPath`, and loaded.
 
-```typescript
-import { GcpMonorepoSecretManager } from "gcp-monorepo-secret-manager";
+| Option | Type | Required | Default |
+| --- | --- | --- | --- |
+| `serviceName` | `string` | yes | — |
+| `provider` | `"gcp"` \| `"aws"` \| `"azure"` \| `"local"` | no | `"gcp"` |
+| `projectId` | `string` | for `gcp` | — |
+| `region` | `string` | for `aws` | — |
+| `vaultUrl` | `string` | for `azure` | — |
+| `storePath` | `string` | no | local default |
+| `envPath` | `string` | no | `./.env` |
+| `secretName` | `string` | no | `{SERVICE_NAME}_ENV_FILE` (`serviceName` uppercased) |
+| `requiredEnvVars` | `string[]` | no | — |
 
-const secretManager = new GcpMonorepoSecretManager({
-  environment: "production",       // or 'staging'
-  overrideSa: false,              // optional, for CI/CD environments
-  configPath: ".secrets-config",   // optional, custom config path
-});
+After load, `ENV` must be set (for example `STG` or `PROD`). Missing `requiredEnvVars` or `ENV` throws.
 
-// Core operations
-await secretManager.uploadEnv("frontend");
-await secretManager.downloadEnv("api");
-await secretManager.peekEnv("api");
-await secretManager.setEnv("worker");
+The default `secretName` is **not** the same as a v2 `remoteName`. Pass `secretName` explicitly when the process should read a secret created by `msm`.
 
-// Cleanup operations
-await secretManager.cleanupVersions("frontend");  // Clean specific service
-await secretManager.cleanupVersions("all");       // Clean all services
-
-// Service management
-const services = secretManager.getAvailableServices();
-console.log("Available services:", services);
-```
-
-### Simple Configuration Loading
-
-```typescript
-import { loadConfig } from "gcp-monorepo-secret-manager";
-
-// Load configuration with validation
-await loadConfig({
-  serviceName: "my-service",
-  projectId: "my-gcp-project",
-  requiredEnvVars: ["DATABASE_URL", "API_KEY"]
-});
-
-// Environment variables are now available
-console.log(process.env.DATABASE_URL);
-```
-
-### TypeScript Interfaces
-
-```typescript
-import { 
-  loadConfig, 
-  ConfigOptions, 
-  BaseConfig,
-  GcpMonorepoSecretManager,
-  GcpMonorepoSecretManagerOptions
-} from "gcp-monorepo-secret-manager";
-
-// Configuration options for loadConfig
-interface ConfigOptions {
-  serviceName: string;           // Required: service identifier
-  projectId: string;            // Required: GCP project ID
-  envPath?: string;             // Optional: .env file path (default: ./.env)
-  secretName?: string;          // Optional: secret name (default: {SERVICE_NAME}_ENV_FILE)
-  requiredEnvVars?: string[];   // Optional: required environment variables
-}
-
-// Base configuration interface
-interface BaseConfig {
-  env: "STG" | "PROD";          // Environment type
-}
-
-// Full Secret Manager options
-interface GcpMonorepoSecretManagerOptions {
-  environment: "staging" | "production";
-  overrideSa?: boolean;         // Skip service account loading
-  configPath?: string;          // Custom config file path
-}
-```
-
-### Usage Example
-
-```typescript
+```ts
 import express from "express";
-import { loadConfig } from "gcp-monorepo-secret-manager";
+import { loadConfig } from "monorepo-secret-manager";
 
-async function startServer() {
-  // Load configuration at startup
+async function main() {
   await loadConfig({
-    serviceName: "api-server",
-    projectId: "my-company-prod",
-    requiredEnvVars: ["DATABASE_URL", "JWT_SECRET", "PORT"]
+    serviceName: "api",
+    provider: "gcp",
+    projectId: process.env.GOOGLE_CLOUD_PROJECT!,
+    secretName: "api-env-file",
+    requiredEnvVars: ["DATABASE_URL", "JWT_SECRET", "PORT"],
   });
 
   const app = express();
-  const port = process.env.PORT || 3000;
-  
-  // Your app logic here
-  
-  app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-  });
+  app.listen(Number(process.env.PORT) || 3000);
 }
 
-startServer().catch(console.error);
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
 ```
 
-### Best Practices
+Call `loadConfig` once at startup. Do not log secret values.
 
-1. **Cache Configuration**: Load configuration once at application startup
-2. **Validate Required Variables**: Always specify `requiredEnvVars` for critical configuration
-3. **Error Handling**: Implement proper error handling for production applications
-4. **Environment Separation**: Use different project IDs for staging/production
-5. **Security**: Never log sensitive environment variables
-6. **Graceful Degradation**: Consider fallback values for non-critical configuration
+### `MonorepoSecretManager`
 
-**Use Cases:**
-- Simple service initialization
-- Containerized applications
-- Serverless functions
-- Microservices
+Same operations as the CLI, driven by `.secrets-config`.
 
-## Security & Best Practices
+```ts
+import { MonorepoSecretManager } from "monorepo-secret-manager";
 
-- Service account files should never be committed to version control
-- Add `.secrets-config` to `.gitignore` if it contains sensitive information
-- Environment files should only contain references, not actual secrets
-- Use least-privilege IAM roles for Google Cloud service accounts
-- Use `--override-sa` flag in CI/CD environments
-- Enable delete policies to manage secret lifecycle
-- Regular cleanup prevents Google Cloud Secret Manager quota issues
+const secrets = new MonorepoSecretManager({
+  environment: "production",
+  overrideSa: false,
+  configPath: ".secrets-config",
+});
 
-## Error Handling
+await secrets.uploadEnv("frontend");
+await secrets.downloadEnv("api");
+await secrets.setEnv("worker");
+await secrets.peekEnv("api");
+await secrets.cleanupVersions("all");
 
-- Missing or invalid configuration file
-- Missing service account files
-- Invalid service names
-- Google Cloud Secret Manager access issues
-- File system permissions
-- Cleanup operation failures (gracefully handled)
+console.log(secrets.getAvailableServices());
+```
+
+| Method | Description |
+| --- | --- |
+| `uploadEnv(name)` | Upload one service or `"all"`. Runs cleanup afterward if the policy is enabled. |
+| `downloadEnv(name)` | Write the latest secret to source paths. |
+| `setEnv(name)` | Write the latest secret to target paths. |
+| `peekEnv(name)` | Print a redacted view of the latest secret. |
+| `cleanupVersions(name)` | Apply `deletePolicy`. |
+| `getAvailableServices()` | Service names from config. |
+
+`GcpMonorepoSecretManager` remains as a deprecated alias of `MonorepoSecretManager`.
+
+Also exported: `ConfigManager`, `loadConfig`, `createBackend`, `getKind`, `initSecretManagerClient`, and the TypeScript types `ConfigOptions`, `MonorepoSecretManagerOptions`, `SecretsConfig`, `ServiceConfig`, `Environment`, `Provider`, and `DeletePolicy`.
+
+## CI/CD
+
+Authenticate with the provider’s short-lived identity (GCP [Workload Identity Federation](https://cloud.google.com/iam/docs/workload-identity-federation), AWS roles, Azure managed identity), then download with `--override-sa`. A full example lives in [`.github/workflows/example-usage.yml`](.github/workflows/example-usage.yml).
+
+```yaml
+- uses: google-github-actions/auth@v2
+  with:
+    workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+    service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+- run: |
+    npm install -g monorepo-secret-manager
+    npm install -g @google-cloud/secret-manager
+- run: msm --download --service all --stg --set --override-sa
+```
+
+Checkout must include `.secrets-config`. Prefer federated identity over checking in a JSON key.
+
+## Secret versions
+
+After each successful upload, versions are destroyed when they exceed `maxVersions` or `maxAgeDays`. At least one version is always kept. Cleanup failures are logged and do not fail the upload.
+
+```bash
+msm --cleanup --service api --prod
+msm --cleanup --service all --stg
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | Set `false` to disable automatic and manual cleanup. |
+| `maxVersions` | `10` | Keep the newest N versions. `0` skips this rule. |
+| `maxAgeDays` | `30` | Destroy versions older than N days. `0` skips this rule. |
+
+## Security
+
+- Treat `.environments/`, downloaded `.env` files, `.msm/key`, TLS keys, SSH private keys, and cloud credential files as secrets. Do not commit them.
+- `msm --peek` redacts values. Still avoid piping peek output into shared logs if you have customized kinds.
+- Grant the smallest role that matches the job (read vs write/admin).
+- Use `--override-sa` with short-lived credentials in CI instead of long-lived keys.
+- Keep `deletePolicy` enabled so unused versions do not pile up against provider quotas.
+- The local store is refused if it is tracked by git. Keep `.msm/` ignored.
+
+## Development
+
+```bash
+git clone https://github.com/adamsiwiec1/monorepo-secret-manager.git
+cd monorepo-secret-manager
+npm install
+npm test
+npm run build
+```
+
+| Script | Description |
+| --- | --- |
+| `npm test` | Jest |
+| `npm run test:coverage` | Coverage report |
+| `npm run build` | Compile to `dist/` |
+| `npm run dev` | Run the CLI via `ts-node` |
+
+Releases use [semantic-release](https://github.com/semantic-release/semantic-release) on `master` / `main`. See [CHANGELOG.md](CHANGELOG.md).
+
+## Contributing
+
+Contributions are welcome under MIT. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues privately per [SECURITY.md](SECURITY.md) — never in a public issue.
+
+## FOSS template
+
+Community health files in this repo follow the shared FreeTech / OpenHat
+[FOSS template](https://github.com/adamsiwiec1/foss-template)
+([org fork](https://github.com/the-freetech-company/foss-template)):
+Contributor Covenant, contributing, security, support, and GitHub issue/PR
+templates. Product docs stay in this README and [MIGRATION.md](./MIGRATION.md).
 
 ## License
 
-MIT License
+[MIT](LICENSE) © [Adam Siwiec](https://github.com/adamsiwiec1)

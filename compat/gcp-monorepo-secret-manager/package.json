@@ -1,0 +1,29 @@
+{
+  "name": "gcp-monorepo-secret-manager",
+  "version": "1.2.0",
+  "description": "Deprecated: this package was renamed to monorepo-secret-manager.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "bin": {
+    "gcp-monorepo-secret-manager": "cli.js",
+    "msm": "cli.js"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "cli.js",
+    "README.md"
+  ],
+  "scripts": {
+    "deprecate:legacy": "npm deprecate gcp-monorepo-secret-manager@\"*\" \"Renamed to monorepo-secret-manager. Install monorepo-secret-manager instead.\""
+  },
+  "dependencies": {
+    "monorepo-secret-manager": "^2.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adamsiwiec1/monorepo-secret-manager.git"
+  },
+  "author": "Adam Siwiec"
+}

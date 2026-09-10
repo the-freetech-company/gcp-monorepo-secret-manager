@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a non-security bug
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do **not** report security vulnerabilities here. Use
+        **Security → Report a vulnerability** (see SECURITY.md).
+        Never paste secrets, tokens, or unredacted logs.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: e.g. 2.0.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs / context
+      description: Remove secrets, tokens, addresses, and identifiers before pasting.
+    validations:
+      required: false

@@ -1,3 +1,17 @@
+# [2.0.0](https://github.com/adamsiwiec1/monorepo-secret-manager/compare/v1.1.0...v2.0.0) (2026-09-10)
+
+### Features
+
+* rename the package to `monorepo-secret-manager` and add AWS, Azure, and local backends
+* add `env-file`, `ssh-keypair`, `tls-bundle`, `json`, and `binary` secret kinds
+* support provider-aware `.secrets-config` v2 while still loading the GCP-only v1 shape
+
+### BREAKING CHANGES
+
+* the npm package name is now `monorepo-secret-manager`
+* `firebase-admin` is no longer a dependency; GCP uses ADC or a service-account JSON path
+* cloud SDKs are optional peer dependencies
+
 # [1.1.0](https://github.com/the-freetech-company/gcp-monorepo-secret-manager/compare/v1.0.1...v1.1.0) (2025-07-12)
 
 
